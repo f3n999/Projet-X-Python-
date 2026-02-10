@@ -1,0 +1,29 @@
+phishing_analyzer/
+├── src/
+│   ├── __init__.py
+│   ├── main.py                    # Point d'entrée (CLI + interface)
+│   ├── email_parser.py            # Parsing des .eml [PERSONNE 1]
+│   ├── detection_rules.py         # Moteurs heuristiques [PERSONNE 2]
+│   ├── risk_scorer.py             # Scoring 0-100 [PERSONNE 3]
+│   └── exporters.py               # CSV, JSON, rapports [PERSONNE 3]
+│
+├── rules/
+│   ├── phishing_keywords.txt      # Listes de mots-clés suspects
+│   ├── suspicious_domains.txt     # Domaines frauduleux
+│   └── legitimate_domains.txt     # Domaines de confiance (whitelist)
+│
+├── tests/
+│   ├── test_parser.py             # Tests parsing
+│   ├── test_rules.py              # Tests détection
+│   ├── test_scorer.py             # Tests scoring
+│   └── sample_emails/
+│       ├── phishing_samples/       # 5-10 emails phishing .eml
+│       └── legitimate_samples/     # 5-10 emails legit .eml
+│
+├── output/
+│   ├── reports_csv/               # Rapports exportés
+│   └── logs/
+│
+├── requirements.txt
+├── README.md                       # Documentation
+└── setup.py
