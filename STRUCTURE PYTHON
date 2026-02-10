@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# Projet-X-Python-
-
 phishing_analyzer/
 ├── src/
 │   ├── __init__.py
@@ -30,15 +27,3 @@ phishing_analyzer/
 ├── requirements.txt
 ├── README.md                       # Documentation
 └── setup.py
-=======
-# Projet Python
-
-Dépôt préparé pour le projet local. Contient les sources Python présentes dans le dossier.
-
-Instructions rapides pour pousser:
-
-1. Installer Git (Windows): https://git-scm.com/download/win
-2. Configurer `git config --global user.name` et `git config --global user.email`.
-3. Créer un PAT sur GitHub si vous utilisez HTTPS, ou configurer une clé SSH.
-4. Exécuter les commandes indiquées dans le README ou demander à l'assistant de pousser.
->>>>>>> 34235d4 (Add project files and README)
