@@ -1,0 +1,16 @@
+google.com
+gmail.com
+amazon.com
+apple.com
+microsoft.com
+outlook.com
+paypal.com
+facebook.com
+instagram.com
+twitter.com
+linkedin.com
+github.com
+stackoverflow.com
+wikipedia.org
+chase.com
+bankofamerica.com

@@ -1,0 +1,6 @@
+# Phishing Email Analyzer - Dependencies
+# Ce projet utilise uniquement la bibliothèque standard Python 3.7+
+# Aucune dépendance externe requise.
+#
+# Pour les tests :
+# unittest (inclus dans la stdlib)

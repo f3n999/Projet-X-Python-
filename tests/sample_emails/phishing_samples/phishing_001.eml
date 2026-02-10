@@ -1,0 +1,25 @@
+From: security-alert@amaz0n-verify.com
+To: victim@company.com
+Subject: Urgent: Your Amazon account has been suspended
+Date: Mon, 10 Feb 2026 08:30:00 +0000
+Content-Type: text/plain; charset="utf-8"
+
+Dear Customer,
+
+We have detected unusual activity on your Amazon account. Your account has been temporarily suspended.
+
+To restore access, please verify your identity immediately by clicking the link below:
+
+http://192.168.1.100/amazon-verify/login.php
+
+You must act now within 24 hours or your account will be permanently closed.
+
+Please provide the following information:
+- Your password
+- Credit card number
+- CVV code
+
+If you do not respond immediately, we will be forced to close your account.
+
+Best regards,
+Amazon Security Team
