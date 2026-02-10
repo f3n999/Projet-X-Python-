@@ -1,16 +1,54 @@
+# ============================================
+# LEGITIMATE DOMAINS - Domaines de confiance
+# ============================================
+# Domaines officiels des grandes entreprises.
+# Utilises comme whitelist pour eviter les faux positifs.
+# ============================================
+
+# --- Tech US ---
 google.com
 gmail.com
-amazon.com
 apple.com
+icloud.com
 microsoft.com
 outlook.com
-paypal.com
+amazon.com
 facebook.com
+meta.com
 instagram.com
 twitter.com
+x.com
 linkedin.com
+netflix.com
+yahoo.com
 github.com
-stackoverflow.com
-wikipedia.org
+
+# --- Services financiers ---
+paypal.com
 chase.com
+wellsfargo.com
 bankofamerica.com
+stripe.com
+
+# --- Livraison ---
+dhl.com
+fedex.com
+ups.com
+chronopost.fr
+laposte.fr
+
+# --- Francais ---
+orange.fr
+sfr.fr
+free.fr
+bouyguestelecom.fr
+bnpparibas.fr
+credit-agricole.fr
+labanquepostale.fr
+gouv.fr
+impots.gouv.fr
+ameli.fr
+caf.fr
+
+# --- Education ---
+oteria.fr

@@ -1,25 +1,43 @@
 From: security-alert@amaz0n-verify.com
-To: victim@company.com
-Subject: Urgent: Your Amazon account has been suspended
-Date: Mon, 10 Feb 2026 08:30:00 +0000
+To: victim@example.com
+Subject: Urgent: Your Amazon Account Has Been Suspended
+Date: Mon, 10 Feb 2026 09:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary123"
+
+--boundary123
 Content-Type: text/plain; charset="utf-8"
 
 Dear Customer,
 
-We have detected unusual activity on your Amazon account. Your account has been temporarily suspended.
+We have detected unauthorized access to your Amazon account. Your account has been temporarily suspended.
 
-To restore access, please verify your identity immediately by clicking the link below:
+You must verify your identity immediately or your account will be permanently closed within 24 hours.
 
-http://192.168.1.100/amazon-verify/login.php
+Please click here to confirm your identity: http://192.168.1.100/amazon-login
 
-You must act now within 24 hours or your account will be permanently closed.
+You will need to provide your credit card number, expiration date and CVV to verify your identity.
 
-Please provide the following information:
-- Your password
-- Credit card number
-- CVV code
+Act now to avoid losing access to your account.
 
-If you do not respond immediately, we will be forced to close your account.
-
-Best regards,
 Amazon Security Team
+security-alert@amaz0n-verify.com
+
+--boundary123
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<h2>Amazon Security Alert</h2>
+<p>Dear Customer,</p>
+<p>We have detected <b>unauthorized access</b> to your Amazon account.</p>
+<p>Your account has been <b>temporarily suspended</b>.</p>
+<p>You must verify your identity <b>immediately</b> or your account will be permanently closed within 24 hours.</p>
+<p><a href="http://192.168.1.100/amazon-login">Click here to verify your account</a></p>
+<p>You will need to provide your credit card number, expiration date and CVV.</p>
+<p>Act now!</p>
+<script>alert('tracking');</script>
+</body>
+</html>
+
+--boundary123--

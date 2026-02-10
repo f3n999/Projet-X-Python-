@@ -4,21 +4,30 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.eggs/
+
+# Virtual env
 .venv/
 env/
-.env
+venv/
 
 # IDE
 .vscode/
 .idea/
-
-# Caches
-/.mypy_cache/
-/.pytest_cache/
-
-# Output (generated at runtime)
-output/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Project outputs
+output/reports_csv/
+output/logs/
+*.json
+!rules/*.txt
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/

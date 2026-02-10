@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-MAIN.PY - Point d'entrée et orchestration CLI
-Utilisations:
-  python main.py analyze email.eml
-  python main.py batch ./emails/ --format csv
-  python main.py interactive
-  python main.py --help
+MAIN.PY - Point d'entree et orchestration
+Mission : Lier parser + detecteur + scorer + exporteur en un outil CLI
+
+Commandes :
+    python main.py analyze email.eml                 # Analyse unique
+    python main.py analyze email.eml --format json   # Avec export JSON
+    python main.py batch ./emails/ --format csv      # Batch
+    python main.py interactive                       # Mode interactif
 """
 
 import argparse
@@ -15,6 +17,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
+# Imports internes (les 4 modules du projet)
 from src.email_parser import EmailParser
 from src.detection_rules import PhishingDetector
 from src.risk_scorer import RiskScorer
@@ -22,138 +25,158 @@ from src.exporters import ReportExporter
 
 
 # ============================================================================
-# COULEURS TERMINAL (ANSI)
+# COULEURS TERMINAL (codes ANSI)
 # ============================================================================
+# \033[ = sequence d'echappement ANSI
+# Le terminal interprete ces codes pour colorer le texte
+# \033[0m = reset (fin de couleur)
 
 class Colors:
-    """Codes ANSI pour coloriser la sortie terminal."""
+    """Codes ANSI pour colorer la sortie terminal."""
     HEADER = '\033[95m'
     BLUE = '\033[94m'
     CYAN = '\033[96m'
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
-    ENDC = '\033[0m'
     BOLD = '\033[1m'
+    END = '\033[0m'
 
 
 # ============================================================================
-# CLASSE CLI PRINCIPALE
+# CLASSE PRINCIPALE CLI
 # ============================================================================
 
 class PhishingAnalyzerCLI:
     """
-    Interface CLI avec 3 modes :
-    - analyze : analyse un fichier .eml unique
-    - batch   : analyse tous les .eml d'un répertoire
-    - interactive : menu interactif
+    Interface en ligne de commande pour l'analyseur de phishing.
+
+    Trois modes :
+        1. analyze    : analyse un seul fichier .eml
+        2. batch      : analyse tous les .eml d'un repertoire
+        3. interactive: menu interactif
+
+    Le workflow interne est toujours le meme :
+        parse -> detect -> score -> display/export
     """
 
     def __init__(self, verbose: bool = False, output_dir: str = 'output'):
+        """
+        Initialise les 4 composants du pipeline.
+
+        Args:
+            verbose    : afficher les messages de debug
+            output_dir : repertoire pour les exports
+        """
         self.parser = EmailParser()
-        self.detector = PhishingDetector()
+
+        # Charger les fichiers de regles s'ils existent
+        rules_dir = Path('rules')
+        keywords_file = str(rules_dir / 'phishing_keywords.txt')
+        domains_file = str(rules_dir / 'suspicious_domains.txt')
+
+        self.detector = PhishingDetector(
+            keywords_file=keywords_file if Path(keywords_file).exists() else None,
+            domains_file=domains_file if Path(domains_file).exists() else None
+        )
+
         self.scorer = RiskScorer()
         self.exporter = ReportExporter(output_dir)
         self.verbose = verbose
-        self.output_dir = Path(output_dir)
-
-        self.stats = {
-            'total_analyzed': 0,
-            'total_phishing': 0,
-            'total_safe': 0,
-            'avg_score': 0
-        }
 
     # ========================================================================
     # AFFICHAGE
     # ========================================================================
 
     @staticmethod
-    def print_header():
-        """Affiche le banner de l'outil."""
+    def print_banner():
+        """Affiche la banniere du programme."""
         print(f"""
 {Colors.BOLD}{Colors.CYAN}
-╔════════════════════════════════════════════════════════════╗
-║   PHISHING EMAIL ANALYZER v1.0 - Heuristic Detection      ║
-║   Cybersecurity Tool for Email Threat Assessment           ║
-╚════════════════════════════════════════════════════════════╝
-{Colors.ENDC}""")
-
-    @staticmethod
-    def print_usage():
-        """Affiche les exemples d'utilisation."""
-        print(f"""
-{Colors.BOLD}USAGE :{Colors.ENDC}
-
-  python main.py analyze email.eml              Analyse unique
-  python main.py analyze email.eml --format json Avec export JSON
-  python main.py batch ./emails/ --format csv    Batch processing
-  python main.py interactive                     Mode interactif
-  python main.py analyze email.eml --verbose     Mode debug
-
-{Colors.BOLD}FORMATS DE SORTIE :{Colors.ENDC}
-  console  : Rapport texte formaté (défaut)
-  json     : Format JSON structuré
-  csv      : Format CSV
-  all      : Tous les formats
-""")
+========================================================
+   PHISHING EMAIL ANALYZER v1.0
+   Outil d'analyse heuristique d'emails
+========================================================
+{Colors.END}""")
 
     def log(self, level: str, message: str):
-        """Log avec couleurs et timestamp."""
+        """
+        Affiche un message avec couleur selon le niveau.
+
+        Args:
+            level   : 'INFO', 'SUCCESS', 'WARNING', 'ERROR', 'DEBUG'
+            message : texte a afficher
+        """
         timestamp = datetime.now().strftime('%H:%M:%S')
-        colors_map = {
+        colors = {
             'INFO': Colors.BLUE,
             'SUCCESS': Colors.GREEN,
             'WARNING': Colors.YELLOW,
             'ERROR': Colors.RED,
             'DEBUG': Colors.CYAN,
         }
+
+        color = colors.get(level, '')
+
+        # DEBUG n'apparait qu'en mode verbose
         if level == 'DEBUG' and not self.verbose:
             return
 
-        color = colors_map.get(level, Colors.ENDC)
-        print(f"{color}[{timestamp}] {message}{Colors.ENDC}")
+        print(f"{color}[{timestamp}] {message}{Colors.END}")
 
     # ========================================================================
     # MODE 1 : ANALYSE UNIQUE
     # ========================================================================
 
-    def analyze_single_file(self, eml_path: str, export_format: str = 'console') -> Optional[Dict]:
-        """Analyse un fichier .eml et retourne les résultats."""
+    def analyze_single(self, eml_path: str, export_format: str = 'console') -> Optional[Dict]:
+        """
+        Analyse un seul fichier .eml.
+
+        Pipeline :
+            1. Parser l'email (EmailParser)
+            2. Lancer les 15 regles (PhishingDetector)
+            3. Calculer le score (RiskScorer)
+            4. Afficher et/ou exporter
+
+        Args:
+            eml_path      : chemin vers le fichier .eml
+            export_format : 'console', 'json', 'csv' ou 'all'
+
+        Returns:
+            Dict complet de l'analyse, ou None si erreur
+        """
         eml_file = Path(eml_path)
 
+        # --- Validation ---
         if not eml_file.exists():
-            self.log('ERROR', f"File not found: {eml_path}")
+            self.log('ERROR', f"Fichier introuvable : {eml_path}")
             return None
 
-        if eml_file.suffix.lower() != '.eml':
-            self.log('WARNING', f"File is not .eml: {eml_file.suffix}")
+        # --- ETAPE 1 : Parsing ---
+        self.log('INFO', f"Parsing : {eml_file.name}")
+        parsed = self.parser.parse_eml_file(str(eml_file))
 
-        self.log('INFO', f"Parsing: {eml_file.name}")
-
-        # Etape 1 : Parsing
-        parsed = self.parser.parse_eml_file(eml_path)
         if 'error' in parsed:
-            self.log('ERROR', f"Parse error: {parsed['error']}")
+            self.log('ERROR', f"Erreur de parsing : {parsed['error']}")
             return None
 
-        self.log('DEBUG', f"  Headers: {len(parsed['headers'])}")
-        self.log('DEBUG', f"  URLs: {len(parsed['urls'])}")
-        self.log('DEBUG', f"  Attachments: {len(parsed['attachments'])}")
+        self.log('DEBUG', f"  URLs: {len(parsed['urls'])}, "
+                          f"Pieces jointes: {len(parsed['attachments'])}")
 
-        # Etape 2 : Détection
-        self.log('INFO', "Running 15 detection rules...")
+        # --- ETAPE 2 : Detection ---
+        self.log('INFO', "Lancement des 15 regles de detection...")
         detection_results = self.detector.analyze(parsed)
-        triggered = sum(1 for r in detection_results.values() if r['triggered'])
-        self.log('DEBUG', f"  {triggered} rules triggered")
 
-        # Etape 3 : Scoring
-        self.log('INFO', "Calculating risk score...")
+        triggered_count = sum(1 for r in detection_results.values() if r['triggered'])
+        self.log('DEBUG', f"  {triggered_count} regles declenchees")
+
+        # --- ETAPE 3 : Scoring ---
+        self.log('INFO', "Calcul du score de risque...")
         score, metadata = self.scorer.calculate_score(detection_results)
 
-        # Construction du résultat final
+        # --- Assemblage du resultat final ---
         analysis = {
-            'file_path': eml_path,
+            'file_path': str(eml_file),
             'file_name': eml_file.name,
             'analysis_timestamp': datetime.now().isoformat(),
             'headers': parsed['headers'],
@@ -163,100 +186,76 @@ class PhishingAnalyzerCLI:
             'attachments': parsed['attachments'],
             'detection_results': detection_results,
             'score': score,
-            **metadata
+            **metadata  # decompresse triggered_rules, risk_level, etc.
         }
 
-        # Affichage
-        self._display_result(analysis)
+        # --- ETAPE 4 : Affichage ---
+        self._display_analysis(analysis)
 
-        # Export
-        if export_format not in ('console', 'none'):
-            self._export_result(analysis, export_format)
-
-        # Stats
-        self._update_stats(score, metadata['risk_level'])
+        # --- ETAPE 5 : Export ---
+        if export_format != 'console':
+            self._export_analysis(analysis, export_format)
 
         return analysis
 
-    def _update_stats(self, score: int, risk_level: str):
-        """Met à jour les statistiques internes."""
-        self.stats['total_analyzed'] += 1
-        n = self.stats['total_analyzed']
-        self.stats['avg_score'] = (self.stats['avg_score'] * (n - 1) + score) / n
-
-        if risk_level in ('HIGH', 'CRITICAL'):
-            self.stats['total_phishing'] += 1
-        else:
-            self.stats['total_safe'] += 1
-
-    def _display_result(self, analysis: Dict):
-        """Affiche le rapport formaté dans le terminal."""
+    def _display_analysis(self, analysis: Dict):
+        """Affiche le resultat formate avec couleurs."""
         score = analysis['score']
-        risk_level = analysis['risk_level']
+        risk = analysis['risk_level']
 
-        risk_styles = {
-            'CRITICAL': (Colors.RED, '!!!'),
-            'HIGH':     (Colors.RED, '!! '),
-            'MEDIUM':   (Colors.YELLOW, '!  '),
-            'LOW':      (Colors.YELLOW, '.  '),
-            'SAFE':     (Colors.GREEN, 'OK '),
+        # Couleur selon le niveau de risque
+        risk_colors = {
+            'CRITICAL': Colors.RED,
+            'HIGH': Colors.RED,
+            'MEDIUM': Colors.YELLOW,
+            'LOW': Colors.YELLOW,
+            'SAFE': Colors.GREEN,
         }
-        risk_color, risk_icon = risk_styles.get(risk_level, (Colors.ENDC, '?  '))
+        color = risk_colors.get(risk, '')
 
         print(f"""
 {Colors.BOLD}{Colors.CYAN}
-╔════════════════════════════════════════════════════════════╗
-║           PHISHING EMAIL ANALYSIS REPORT                   ║
-╚════════════════════════════════════════════════════════════╝
-{Colors.ENDC}
-{Colors.BOLD}EMAIL METADATA{Colors.ENDC}
-{Colors.CYAN}────────────────────────────────────────────────────────────{Colors.ENDC}
-  From:              {analysis['headers'].get('From', 'N/A')[:50]}
-  To:                {analysis['headers'].get('To', 'N/A')[:50]}
-  Subject:           {analysis['headers'].get('Subject', 'N/A')[:50]}
-  Date:              {analysis['headers'].get('Date', 'N/A')[:30]}
+========================================================
+          ANALYSE TERMINEE
+========================================================
+{Colors.END}
+  From:    {analysis['headers'].get('From', 'N/A')[:60]}
+  Subject: {analysis['headers'].get('Subject', 'N/A')[:60]}
 
-{Colors.BOLD}RISK ASSESSMENT{Colors.ENDC}
-{Colors.CYAN}────────────────────────────────────────────────────────────{Colors.ENDC}
-  Risk Score:        {risk_color}{Colors.BOLD}{score}/100{Colors.ENDC}
-  Risk Level:        {risk_color}{Colors.BOLD}[{risk_icon}] {risk_level}{Colors.ENDC}
-  Rules Triggered:   {analysis['triggered_rules_count']}/{analysis['total_rules']}
-
-{Colors.BOLD}TRIGGERED RULES ({analysis['triggered_rules_count']}){Colors.ENDC}
-{Colors.CYAN}────────────────────────────────────────────────────────────{Colors.ENDC}""")
-
-        if analysis['triggered_rules']:
-            for i, rule in enumerate(analysis['triggered_rules'], 1):
-                rule_color = Colors.RED if rule['weight'] >= 9 else Colors.YELLOW
-                print(f"  {i}. {rule_color}{rule['name']}{Colors.ENDC} (weight: {rule['weight']})")
-                print(f"     {rule['reason']}")
-        else:
-            print("  No suspicious rules triggered")
-
-        # Données extraites
-        print(f"""
-{Colors.BOLD}EXTRACTED DATA{Colors.ENDC}
-{Colors.CYAN}────────────────────────────────────────────────────────────{Colors.ENDC}
-  URLs:        {len(analysis['urls'])}
-  Emails:      {len(analysis['emails'])}
-  IPs:         {len(analysis['ips'])}
-  Attachments: {len(analysis['attachments'])}
-
-  File:        {analysis['file_name']}
-  Timestamp:   {analysis['analysis_timestamp']}
+  Score :  {color}{Colors.BOLD}{score}/100 - {risk}{Colors.END}
+  Regles : {analysis['triggered_rules_count']}/{analysis['total_rules']} declenchees
 """)
 
-    def _export_result(self, analysis: Dict, export_format: str):
-        """Exporte le résultat dans le(s) format(s) demandé(s)."""
+        # Afficher les regles declenchees
+        if analysis['triggered_rules']:
+            print(f"  {Colors.BOLD}Regles declenchees :{Colors.END}")
+            for rule in analysis['triggered_rules']:
+                rule_color = Colors.RED if rule['weight'] >= 9 else Colors.YELLOW
+                print(f"    {rule_color}* {rule['name']}{Colors.END} "
+                      f"(poids: {rule['weight']}) - {rule['reason']}")
+        else:
+            print(f"  {Colors.GREEN}Aucune regle declenchee{Colors.END}")
+
+        # Donnees extraites
+        print(f"""
+  URLs:    {len(analysis['urls'])}
+  Emails:  {len(analysis['emails'])}
+  IPs:     {len(analysis['ips'])}
+  Pièces jointes: {len(analysis['attachments'])}
+""")
+
+    def _export_analysis(self, analysis: Dict, export_format: str):
+        """Exporte dans le format demande."""
         formats = ['json', 'csv'] if export_format == 'all' else [export_format]
 
         for fmt in formats:
             try:
                 if fmt == 'json':
-                    filepath = self.exporter.export_json(analysis)
-                    self.log('SUCCESS', f"JSON export: {filepath}")
+                    path = self.exporter.export_json(analysis)
+                    self.log('SUCCESS', f"Export JSON : {path}")
+
                 elif fmt == 'csv':
-                    csv_data = [{
+                    csv_row = [{
                         'filename': analysis['file_name'],
                         'from': analysis['headers'].get('From', 'N/A'),
                         'subject': analysis['headers'].get('Subject', 'N/A'),
@@ -266,36 +265,44 @@ class PhishingAnalyzerCLI:
                         'urls_count': len(analysis['urls']),
                         'attachments_count': len(analysis['attachments'])
                     }]
-                    filepath = self.exporter.export_csv(csv_data)
-                    self.log('SUCCESS', f"CSV export: {filepath}")
+                    path = self.exporter.export_csv(csv_row)
+                    self.log('SUCCESS', f"Export CSV : {path}")
+
             except (OSError, IOError) as e:
-                self.log('ERROR', f"Export failed: {str(e)}")
+                self.log('ERROR', f"Echec export {fmt} : {e}")
 
     # ========================================================================
-    # MODE 2 : BATCH PROCESSING
+    # MODE 2 : BATCH
     # ========================================================================
 
-    def analyze_batch(self, directory: str, export_format: str = 'csv', recursive: bool = True):
-        """Analyse tous les .eml d'un répertoire."""
+    def analyze_batch(self, directory: str, export_format: str = 'csv'):
+        """
+        Analyse tous les fichiers .eml d'un repertoire.
+
+        Args:
+            directory     : chemin du repertoire
+            export_format : 'csv', 'json' ou 'all'
+        """
         dir_path = Path(directory)
 
         if not dir_path.exists():
-            self.log('ERROR', f"Directory not found: {directory}")
+            self.log('ERROR', f"Repertoire introuvable : {directory}")
             return
 
-        pattern = '**/*.eml' if recursive else '*.eml'
-        eml_files = list(dir_path.glob(pattern))
+        # Chercher tous les .eml recursivement
+        eml_files = list(dir_path.rglob('*.eml'))
 
         if not eml_files:
-            self.log('WARNING', f"No .eml files found in {directory}")
+            self.log('WARNING', f"Aucun fichier .eml dans {directory}")
             return
 
-        self.log('INFO', f"Found {len(eml_files)} .eml files")
+        self.log('INFO', f"{len(eml_files)} fichiers .eml trouves")
 
         results = []
         for i, eml_file in enumerate(eml_files, 1):
-            print(f"\n{Colors.CYAN}[{i}/{len(eml_files)}]{Colors.ENDC} {eml_file.name}")
-            analysis = self.analyze_single_file(str(eml_file), export_format='none')
+            print(f"\n{Colors.CYAN}[{i}/{len(eml_files)}]{Colors.END} {eml_file.name}")
+
+            analysis = self.analyze_single(str(eml_file), export_format='console')
 
             if analysis:
                 results.append({
@@ -309,103 +316,112 @@ class PhishingAnalyzerCLI:
                     'attachments_count': len(analysis['attachments'])
                 })
 
-        # Export batch
-        formats = ['csv', 'json'] if export_format == 'all' else [export_format]
+        # Exporter les resultats batch
+        if not results:
+            return
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        formats = ['csv', 'json'] if export_format == 'all' else [export_format]
 
         for fmt in formats:
             try:
                 if fmt == 'csv':
-                    filepath = self.exporter.export_csv(results, f"batch_report_{timestamp}.csv")
-                    self.log('SUCCESS', f"Batch CSV: {filepath}")
+                    path = self.exporter.export_csv(
+                        results, f"batch_{timestamp}.csv")
+                    self.log('SUCCESS', f"Batch CSV : {path}")
                 elif fmt == 'json':
                     batch_data = {
-                        'batch_analysis': {
-                            'total_files': len(eml_files),
-                            'total_analyzed': len(results),
+                        'batch_info': {
+                            'total': len(eml_files),
+                            'analyzed': len(results),
                             'timestamp': datetime.now().isoformat()
                         },
                         'results': results
                     }
-                    filepath = self.exporter.export_json(batch_data, f"batch_report_{timestamp}.json")
-                    self.log('SUCCESS', f"Batch JSON: {filepath}")
+                    path = self.exporter.export_json(
+                        batch_data, f"batch_{timestamp}.json")
+                    self.log('SUCCESS', f"Batch JSON : {path}")
             except (OSError, IOError) as e:
-                self.log('ERROR', f"Batch export failed: {str(e)}")
+                self.log('ERROR', f"Batch export {fmt} : {e}")
 
+        # Resume
         self._print_batch_summary(results)
 
-    def _print_batch_summary(self, results: List[Dict]):
-        """Affiche le résumé des résultats batch."""
+    @staticmethod
+    def _print_batch_summary(results: List[Dict]):
+        """Affiche un resume des resultats batch."""
         total = len(results)
         if total == 0:
-            self.log('WARNING', "No results to summarize")
             return
 
-        distribution = {
-            'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'SAFE': 0
-        }
-        for r in results:
-            distribution[r['risk_level']] = distribution.get(r['risk_level'], 0) + 1
+        avg = sum(r['score'] for r in results) / total
 
-        avg_score = sum(r['score'] for r in results) / total
+        # Compter par niveau
+        levels = {}
+        for r in results:
+            level = r['risk_level']
+            levels[level] = levels.get(level, 0) + 1
 
         print(f"""
 {Colors.BOLD}{Colors.CYAN}
-╔════════════════════════════════════════════════════════════╗
-║                   BATCH ANALYSIS SUMMARY                   ║
-╚════════════════════════════════════════════════════════════╝
-{Colors.ENDC}
-  Total Analyzed:  {total}
-  Average Score:   {avg_score:.1f}/100
-
-  {Colors.RED}CRITICAL:{Colors.ENDC}  {distribution['CRITICAL']} ({distribution['CRITICAL'] * 100 / total:.1f}%)
-  {Colors.RED}HIGH:{Colors.ENDC}      {distribution['HIGH']} ({distribution['HIGH'] * 100 / total:.1f}%)
-  {Colors.YELLOW}MEDIUM:{Colors.ENDC}    {distribution['MEDIUM']} ({distribution['MEDIUM'] * 100 / total:.1f}%)
-  {Colors.YELLOW}LOW:{Colors.ENDC}       {distribution['LOW']} ({distribution['LOW'] * 100 / total:.1f}%)
-  {Colors.GREEN}SAFE:{Colors.ENDC}      {distribution['SAFE']} ({distribution['SAFE'] * 100 / total:.1f}%)
+========================================================
+               RESUME BATCH
+========================================================
+{Colors.END}
+  Analyses :     {total}
+  Score moyen :  {avg:.1f}/100
 """)
+        for level in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'SAFE']:
+            count = levels.get(level, 0)
+            pct = count * 100 / total
+            print(f"  {level:10s} : {count} ({pct:.0f}%)")
+        print()
 
     # ========================================================================
     # MODE 3 : INTERACTIF
     # ========================================================================
 
     def interactive_mode(self):
-        """Lance le menu interactif."""
-        self.print_header()
+        """Mode menu interactif."""
+        self.print_banner()
 
         while True:
             print(f"""
-{Colors.BOLD}MENU{Colors.ENDC}
-{Colors.CYAN}────────────────────────────────────────────────────────────{Colors.ENDC}
-  1. Analyser un fichier email
-  2. Analyser un répertoire (batch)
+{Colors.BOLD}MENU{Colors.END}
+  1. Analyser un email
+  2. Analyser un repertoire (batch)
   3. Aide
   4. Quitter
 """)
-            choice = input(f"{Colors.BOLD}Choix (1-4): {Colors.ENDC}").strip()
+            choice = input("Choix (1-4) : ").strip()
 
             if choice == '1':
-                filepath = input("Chemin du fichier .eml: ").strip()
-                fmt = input("Format (console/json/csv/all) [console]: ").strip() or 'console'
-                self.analyze_single_file(filepath, export_format=fmt)
+                path = input("Chemin du .eml : ").strip()
+                fmt = input("Format (console/json/csv/all) [console] : ").strip()
+                self.analyze_single(path, export_format=fmt or 'console')
 
             elif choice == '2':
-                dirpath = input("Chemin du répertoire: ").strip()
-                fmt = input("Format (csv/json/all) [csv]: ").strip() or 'csv'
-                recursive = input("Recherche récursive (y/n) [y]: ").strip().lower() != 'n'
-                self.analyze_batch(dirpath, export_format=fmt, recursive=recursive)
+                path = input("Chemin du repertoire : ").strip()
+                fmt = input("Format (csv/json/all) [csv] : ").strip()
+                self.analyze_batch(path, export_format=fmt or 'csv')
 
             elif choice == '3':
-                self.print_usage()
+                print("""
+  python main.py analyze email.eml
+  python main.py analyze email.eml --format json
+  python main.py batch ./emails/ --format csv
+  python main.py interactive
+  python main.py analyze email.eml --verbose
+""")
 
             elif choice == '4':
-                self.log('INFO', "Exiting...")
+                self.log('INFO', "Fin du programme.")
                 break
 
             else:
-                self.log('ERROR', "Choix invalide")
+                self.log('ERROR', "Choix invalide.")
 
-            input(f"\n{Colors.BOLD}Appuyez sur Entrée...{Colors.ENDC}")
+            input(f"\n{Colors.BOLD}Appuyer sur Entree...{Colors.END}")
 
 
 # ============================================================================
@@ -413,63 +429,79 @@ class PhishingAnalyzerCLI:
 # ============================================================================
 
 def main():
-    """Parse les arguments CLI et lance le mode approprié."""
-    parser_cli = argparse.ArgumentParser(
-        prog='Phishing Email Analyzer',
-        description='Outil de détection heuristique de phishing',
+    """
+    Point d'entree du programme.
+
+    Utilise argparse pour gerer les arguments en ligne de commande.
+    argparse decoupe la commande en : programme + sous-commande + arguments
+    """
+    cli_parser = argparse.ArgumentParser(
+        prog='Phishing Analyzer',
+        description='Outil de detection heuristique de phishing par email',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""
-            Exemples:
+            Exemples :
               %(prog)s analyze email.eml
               %(prog)s batch ./emails/ --format csv
               %(prog)s interactive
         """)
     )
 
-    parser_cli.add_argument('--version', action='version', version='%(prog)s 1.0')
-    parser_cli.add_argument('--verbose', '-v', action='store_true', help='Mode debug')
-    parser_cli.add_argument('--output-dir', '-o', default='output', help='Répertoire de sortie')
+    cli_parser.add_argument('--version', action='version', version='%(prog)s 1.0')
+    cli_parser.add_argument('--verbose', '-v', action='store_true',
+                            help='Mode debug (affiche plus de details)')
+    cli_parser.add_argument('--output-dir', '-o', default='output',
+                            help='Repertoire de sortie (defaut: output)')
 
-    subparsers = parser_cli.add_subparsers(dest='command', help='Commandes')
+    # Sous-commandes
+    subparsers = cli_parser.add_subparsers(dest='command', help='Commandes')
 
-    # analyze
-    p_analyze = subparsers.add_parser('analyze', help='Analyser un fichier .eml')
-    p_analyze.add_argument('file', help='Chemin du fichier .eml')
-    p_analyze.add_argument('--format', '-f', choices=['console', 'json', 'csv', 'all'],
-                           default='console', help='Format de sortie')
+    # Commande : analyze
+    analyze_cmd = subparsers.add_parser('analyze', help='Analyser un .eml')
+    analyze_cmd.add_argument('file', help='Chemin du fichier .eml')
+    analyze_cmd.add_argument('--format', '-f',
+                             choices=['console', 'json', 'csv', 'all'],
+                             default='console', help='Format de sortie')
 
-    # batch
-    p_batch = subparsers.add_parser('batch', help='Analyser un répertoire')
-    p_batch.add_argument('directory', help='Chemin du répertoire')
-    p_batch.add_argument('--format', '-f', choices=['csv', 'json', 'all'],
-                         default='csv', help='Format export')
-    p_batch.add_argument('--recursive', '-r', action='store_true', help='Recherche récursive')
+    # Commande : batch
+    batch_cmd = subparsers.add_parser('batch', help='Analyse batch')
+    batch_cmd.add_argument('directory', help='Repertoire contenant les .eml')
+    batch_cmd.add_argument('--format', '-f',
+                           choices=['csv', 'json', 'all'],
+                           default='csv', help='Format export')
 
-    # interactive
+    # Commande : interactive
     subparsers.add_parser('interactive', help='Mode interactif')
 
-    args = parser_cli.parse_args()
-    cli = PhishingAnalyzerCLI(verbose=args.verbose, output_dir=args.output_dir)
+    args = cli_parser.parse_args()
 
+    # Creer l'analyseur
+    analyzer = PhishingAnalyzerCLI(
+        verbose=args.verbose,
+        output_dir=args.output_dir
+    )
+
+    # Router vers la bonne commande
     if args.command == 'analyze':
-        cli.print_header()
-        cli.analyze_single_file(args.file, export_format=args.format)
+        analyzer.print_banner()
+        analyzer.analyze_single(args.file, export_format=args.format)
+
     elif args.command == 'batch':
-        cli.print_header()
-        cli.analyze_batch(args.directory, export_format=args.format, recursive=args.recursive)
+        analyzer.print_banner()
+        analyzer.analyze_batch(args.directory, export_format=args.format)
+
     elif args.command == 'interactive':
-        cli.interactive_mode()
+        analyzer.interactive_mode()
+
     else:
-        cli.print_header()
-        cli.print_usage()
+        # Pas de commande = afficher l'aide
+        analyzer.print_banner()
+        cli_parser.print_help()
 
 
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n{Colors.RED}Interrupted by user{Colors.ENDC}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"{Colors.RED}Fatal error: {str(e)}{Colors.ENDC}")
+        print(f"\n{Colors.RED}Interrompu par l'utilisateur{Colors.END}")
         sys.exit(1)

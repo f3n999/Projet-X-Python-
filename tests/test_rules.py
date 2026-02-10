@@ -1,120 +1,169 @@
-"""Tests pour le module detection_rules."""
+"""
+Tests pour le module detection_rules.py
+Lance avec : python -m pytest tests/ -v
+"""
 
-import sys
 import unittest
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from src.detection_rules import PhishingDetector
 
 
-class TestPhishingDetector(unittest.TestCase):
-    """Tests unitaires pour PhishingDetector."""
+def make_email(subject='Test', from_addr='user@example.com',
+               body_text='', body_html='', urls=None,
+               attachments=None, has_auth=True,
+               auth_raw='spf=pass'):
+    """
+    Fabrique un dictionnaire email factice pour les tests.
+    Permet de tester chaque regle independamment.
+    """
+    return {
+        'headers': {
+            'From': from_addr,
+            'To': 'dest@example.com',
+            'Subject': subject,
+            'Date': 'Mon, 10 Feb 2026 10:00:00 +0000',
+        },
+        'body': {
+            'text': body_text[:500],
+            'html': body_html[:500],
+            'full_text': body_text,
+            'full_html': body_html,
+        },
+        'urls': urls or [],
+        'emails': [from_addr],
+        'ips': [],
+        'attachments': attachments or [],
+        'authentication': {
+            'raw': auth_raw,
+            'has_auth': has_auth,
+        }
+    }
+
+
+class TestDetectionRules(unittest.TestCase):
+    """Tests des 15 regles de detection."""
 
     def setUp(self):
         self.detector = PhishingDetector()
 
-    def _make_email(self, **overrides):
-        """Crée un email parsé factice pour les tests."""
-        base = {
-            'headers': {
-                'From': 'user@example.com',
-                'To': 'target@company.com',
-                'Subject': 'Hello',
-                'Date': 'Mon, 10 Feb 2026 10:00:00 +0000',
-            },
-            'body': {
-                'text': '',
-                'html': '',
-                'full_text': '',
-                'full_html': ''
-            },
-            'urls': [],
-            'emails': ['user@example.com'],
-            'ips': [],
-            'attachments': [],
-            'authentication': {
-                'raw': 'spf=pass',
-                'has_auth': True
-            }
-        }
-        base.update(overrides)
-        return base
-
-    def test_clean_email_no_triggers(self):
-        """Un email propre ne devrait déclencher aucune règle critique."""
-        email_data = self._make_email()
-        results = self.detector.analyze(email_data)
-        triggered = [name for name, r in results.items() if r['triggered']]
-        # Un email basique ne devrait pas trigger password_request, urgency, etc.
-        self.assertNotIn('PASSWORD_REQUEST', triggered)
-        self.assertNotIn('ARTIFICIAL_URGENCY', triggered)
-
-    def test_password_request_detection(self):
-        """Détecte une demande de mot de passe."""
-        email_data = self._make_email(
-            body={
-                'text': '', 'html': '',
-                'full_text': 'Please reset your password immediately by clicking below.',
-                'full_html': ''
-            }
-        )
-        results = self.detector.analyze(email_data)
-        self.assertTrue(results['PASSWORD_REQUEST']['triggered'])
-
+    # ---- Regle 1 : Keywords subject ----
     def test_suspicious_keywords_subject(self):
-        """Détecte les mots-clés suspects dans le sujet."""
-        email_data = self._make_email()
-        email_data['headers']['Subject'] = 'Urgent: Verify your account now'
-        results = self.detector.analyze(email_data)
+        email = make_email(subject='Urgent: Verify Your Account')
+        results = self.detector.analyze(email)
         self.assertTrue(results['SUSPICIOUS_KEYWORDS_SUBJECT']['triggered'])
 
-    def test_executable_attachment(self):
-        """Détecte une pièce jointe exécutable."""
-        email_data = self._make_email(
-            attachments=[{'filename': 'invoice.exe', 'size': 1024}]
-        )
-        results = self.detector.analyze(email_data)
-        self.assertTrue(results['EXECUTABLE_ATTACHMENT']['triggered'])
+    def test_clean_subject(self):
+        email = make_email(subject='Meeting mardi 14h')
+        results = self.detector.analyze(email)
+        self.assertFalse(results['SUSPICIOUS_KEYWORDS_SUBJECT']['triggered'])
 
-    def test_no_authentication(self):
-        """Détecte l'absence d'authentification."""
-        email_data = self._make_email(
-            authentication={'raw': 'N/A', 'has_auth': False}
+    # ---- Regle 2 : Keywords body ----
+    def test_suspicious_keywords_body(self):
+        body = 'Dear customer, please verify your account and confirm your identity now'
+        email = make_email(body_text=body)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['SUSPICIOUS_KEYWORDS_BODY']['triggered'])
+
+    # ---- Regle 3 : Password request ----
+    def test_password_request(self):
+        body = 'Please reset your password immediately'
+        email = make_email(body_text=body)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['PASSWORD_REQUEST']['triggered'])
+
+    # ---- Regle 4 : Sensitive data ----
+    def test_sensitive_data_request(self):
+        body = 'Enter your credit card number and CVV'
+        email = make_email(body_text=body)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['SENSITIVE_DATA_REQUEST']['triggered'])
+
+    # ---- Regle 5 : Urgency ----
+    def test_artificial_urgency(self):
+        body = 'This is urgent! Act now or your account will be closed immediately.'
+        email = make_email(body_text=body)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['ARTIFICIAL_URGENCY']['triggered'])
+
+    # ---- Regle 6 : Domain mismatch ----
+    def test_domain_mismatch(self):
+        email = make_email(
+            from_addr='security@paypal.com',
+            urls=['https://evil-site.com/login']
         )
-        results = self.detector.analyze(email_data)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['DOMAIN_MISMATCH']['triggered'])
+
+    # ---- Regle 8 : No auth ----
+    def test_no_authentication(self):
+        email = make_email(has_auth=False, auth_raw='N/A')
+        results = self.detector.analyze(email)
         self.assertTrue(results['NO_AUTHENTICATION']['triggered'])
 
+    # ---- Regle 9 : SPF fail ----
     def test_spf_fail(self):
-        """Détecte un SPF échoué."""
-        email_data = self._make_email(
-            authentication={'raw': 'spf=fail smtp.mailfrom=evil.com', 'has_auth': True}
-        )
-        results = self.detector.analyze(email_data)
+        email = make_email(auth_raw='spf=fail smtp.mailfrom=evil.com')
+        results = self.detector.analyze(email)
         self.assertTrue(results['SPF_FAIL']['triggered'])
 
-    def test_ip_in_url(self):
-        """Détecte une IP dans l'URL."""
-        email_data = self._make_email(
-            urls=['http://192.168.1.1/login.php']
-        )
-        results = self.detector.analyze(email_data)
-        self.assertTrue(results['IP_IN_URL']['triggered'])
+    # ---- Regle 10 : Suspicious HTML (avec BS4) ----
+    def test_suspicious_html_script(self):
+        html = '<html><body><script>alert("xss")</script></body></html>'
+        email = make_email(body_html=html)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['SUSPICIOUS_HTML']['triggered'])
 
+    def test_suspicious_html_iframe(self):
+        html = '<html><body><iframe src="http://evil.com"></iframe></body></html>'
+        email = make_email(body_html=html)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['SUSPICIOUS_HTML']['triggered'])
+
+    # ---- Regle 11 : Short URL ----
     def test_short_url(self):
-        """Détecte les URLs raccourcies."""
-        email_data = self._make_email(
-            urls=['https://bit.ly/abc123']
-        )
-        results = self.detector.analyze(email_data)
+        email = make_email(urls=['https://bit.ly/abc123'])
+        results = self.detector.analyze(email)
         self.assertTrue(results['SHORT_URL']['triggered'])
 
-    def test_levenshtein_distance(self):
-        """Vérifie le calcul de distance de Levenshtein."""
-        self.assertEqual(PhishingDetector._levenshtein_distance('kitten', 'sitting'), 3)
-        self.assertEqual(PhishingDetector._levenshtein_distance('', 'abc'), 3)
-        self.assertEqual(PhishingDetector._levenshtein_distance('same', 'same'), 0)
+    # ---- Regle 12 : Executable attachment ----
+    def test_executable_attachment(self):
+        att = [{'filename': 'invoice.exe', 'size': 1024}]
+        email = make_email(attachments=att)
+        results = self.detector.analyze(email)
+        self.assertTrue(results['EXECUTABLE_ATTACHMENT']['triggered'])
+
+    # ---- Regle 13 : Suspicious sender ----
+    def test_suspicious_sender(self):
+        email = make_email(from_addr='no-reply@suspicious.com')
+        results = self.detector.analyze(email)
+        self.assertTrue(results['SUSPICIOUS_SENDER']['triggered'])
+
+    # ---- Regle 14 : IP in URL ----
+    def test_ip_in_url(self):
+        email = make_email(urls=['http://192.168.1.100/phishing'])
+        results = self.detector.analyze(email)
+        self.assertTrue(results['IP_IN_URL']['triggered'])
+
+    # ---- Regle 15 : Encoding obfuscation ----
+    def test_punycode(self):
+        email = make_email(body_text='Visit xn--pple-43d.com for details')
+        results = self.detector.analyze(email)
+        self.assertTrue(results['ENCODING_OBFUSCATION']['triggered'])
+
+    # ---- Clean email : rien ne se declenche ----
+    def test_clean_email(self):
+        email = make_email(
+            subject='Reunion mardi',
+            from_addr='alice@oteria.fr',
+            body_text='Bonjour, on se voit mardi a 14h.',
+            body_html='',
+            has_auth=True,
+            auth_raw='spf=pass'
+        )
+        results = self.detector.analyze(email)
+
+        triggered = [name for name, r in results.items() if r['triggered']]
+        self.assertEqual(len(triggered), 0,
+                         f"Regles declenchees sur un email propre : {triggered}")
 
 
 if __name__ == '__main__':

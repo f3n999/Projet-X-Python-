@@ -1,12 +1,77 @@
+# ============================================
+# SUSPICIOUS DOMAINS - Domaines frauduleux connus
+# ============================================
+# Domaines de typosquatting et domaines suspects.
+# Un domaine par ligne. Les commentaires (#) sont ignores.
+#
+# Technique de typosquatting :
+#   - Remplacement de lettres : amazon -> amaz0n (o->0)
+#   - Ajout de lettres : google -> gooogle
+#   - Inversion de lettres : paypal -> paypla
+#   - Homoglyphes : apple -> appIe (l majuscule -> I)
+#   - Ajout de prefixes : secure-amazon.com
+# ============================================
+
+# --- Typosquatting Amazon ---
 amaz0n.com
-g00gle.com
+amazom.com
+amazn.com
+amazon-security.com
+amazon-verify.com
+secure-amazon.com
+amazon-update.com
+
+# --- Typosquatting PayPal ---
 paypa1.com
+paypal-secure.com
+paypal-verify.com
+paypol.com
+paypal-update.com
+secure-paypal.com
+
+# --- Typosquatting Apple ---
 app1e.com
+apple-id-verify.com
+apple-support-secure.com
+icloud-verify.com
+appleid-secure.com
+
+# --- Typosquatting Google ---
+go0gle.com
+googgle.com
+google-security-alert.com
+google-verify.com
+accounts-google.com
+
+# --- Typosquatting Microsoft ---
 micros0ft.com
+microsft.com
+microsoft-verify.com
+outlook-secure.com
+microsoft-support.com
+office-365-update.com
+
+# --- Typosquatting banques ---
+chase-secure.com
+wells-fargo-verify.com
+bnp-paribas-secure.com
+credit-agricole-verify.com
+
+# --- Typosquatting Netflix ---
+netf1ix.com
+netflix-billing.com
+netflix-update.com
+
+# --- Typosquatting Facebook/Meta ---
 faceb00k.com
+facebook-security.com
+meta-verify.com
+
+# --- Domaines generiques suspects ---
 secure-login-verify.com
-account-update-alert.com
+account-verification.com
+update-your-information.com
 verify-your-identity.com
-free-prize-claim.com
-banking-security-alert.com
-update-payment-now.com
+security-alert-center.com
+login-secure-portal.com
+confirm-account-now.com

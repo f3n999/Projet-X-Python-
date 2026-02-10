@@ -1,83 +1,74 @@
-"""Tests pour le module email_parser."""
+"""
+Tests pour le module email_parser.py
+Lance avec : python -m pytest tests/ -v
+"""
 
-import sys
-import os
 import unittest
 from pathlib import Path
-
-# Ajouter le répertoire parent au path pour les imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from src.email_parser import EmailParser
 
 
 class TestEmailParser(unittest.TestCase):
-    """Tests unitaires pour EmailParser."""
+    """Tests du parsing d'emails."""
 
     def setUp(self):
+        """Initialise le parser avant chaque test."""
         self.parser = EmailParser()
+        self.samples_dir = Path('tests/sample_emails')
 
-    def test_file_not_found(self):
-        """Vérifie qu'un fichier inexistant retourne une erreur."""
-        result = self.parser.parse_eml_file('nonexistent.eml')
-        self.assertIn('error', result)
-        self.assertIn('File not found', result['error'])
+    def test_parse_phishing_email(self):
+        """Verifie que le parser extrait les donnees d'un email phishing."""
+        result = self.parser.parse_eml_file(
+            str(self.samples_dir / 'phishing_samples' / 'phishing_001.eml'))
 
-    def test_parser_returns_expected_keys(self):
-        """Vérifie la structure de retour sur un fichier de test."""
-        # Créer un fichier .eml minimal pour le test
-        test_eml = Path(__file__).parent / 'sample_emails' / 'test_minimal.eml'
-        test_eml.parent.mkdir(parents=True, exist_ok=True)
+        # Pas d'erreur
+        self.assertNotIn('error', result)
 
-        eml_content = (
-            "From: test@example.com\r\n"
-            "To: victim@example.com\r\n"
-            "Subject: Test Email\r\n"
-            "Date: Mon, 10 Feb 2026 10:00:00 +0000\r\n"
-            "Content-Type: text/plain\r\n"
-            "\r\n"
-            "This is a test email body.\r\n"
-        )
-        test_eml.write_text(eml_content)
+        # Headers extraits
+        self.assertIn('From', result['headers'])
+        self.assertIn('amaz0n', result['headers']['From'])
 
-        result = self.parser.parse_eml_file(str(test_eml))
+        # URLs extraites (regex + BeautifulSoup)
+        self.assertGreater(len(result['urls']), 0)
+
+        # Corps non vide
+        self.assertGreater(len(result['body']['full_text']), 0)
+
+    def test_parse_legitimate_email(self):
+        """Verifie le parsing d'un email legitime."""
+        result = self.parser.parse_eml_file(
+            str(self.samples_dir / 'legitimate_samples' / 'legit_001.eml'))
 
         self.assertNotIn('error', result)
-        expected_keys = ['headers', 'body', 'urls', 'emails', 'ips', 'attachments', 'authentication']
-        for key in expected_keys:
-            self.assertIn(key, result, f"Clé manquante: {key}")
+        self.assertIn('oteria.fr', result['headers']['From'])
 
-        # Vérifier les headers extraits
-        self.assertEqual(result['headers']['From'], 'test@example.com')
-        self.assertEqual(result['headers']['Subject'], 'Test Email')
+        # Email legitime a une authentification
+        self.assertTrue(result['authentication']['has_auth'])
 
-        # Vérifier le body
-        self.assertIn('test email body', result['body']['full_text'].lower())
+    def test_file_not_found(self):
+        """Verifie la gestion d'un fichier inexistant."""
+        result = self.parser.parse_eml_file('fichier_inexistant.eml')
+        self.assertIn('error', result)
 
-        # Nettoyage
-        test_eml.unlink()
+    def test_emails_extracted(self):
+        """Verifie l'extraction des adresses email."""
+        result = self.parser.parse_eml_file(
+            str(self.samples_dir / 'phishing_samples' / 'phishing_001.eml'))
 
-    def test_extract_emails_from_headers(self):
-        """Vérifie l'extraction des adresses email."""
-        test_eml = Path(__file__).parent / 'sample_emails' / 'test_emails.eml'
-        test_eml.parent.mkdir(parents=True, exist_ok=True)
+        self.assertGreater(len(result['emails']), 0)
+        # Au moins l'adresse From
+        found_emails = [e.lower() for e in result['emails']]
+        self.assertTrue(any('example.com' in e for e in found_emails))
 
-        eml_content = (
-            "From: sender@phishing.com\r\n"
-            "To: target@company.com\r\n"
-            "Cc: other@company.com\r\n"
-            "Subject: Test\r\n"
-            "Content-Type: text/plain\r\n"
-            "\r\n"
-            "Contact us at support@fake.com\r\n"
-        )
-        test_eml.write_text(eml_content)
+    def test_html_urls_with_beautifulsoup(self):
+        """Verifie que BeautifulSoup extrait les href des balises <a>."""
+        result = self.parser.parse_eml_file(
+            str(self.samples_dir / 'phishing_samples' / 'phishing_001.eml'))
 
-        result = self.parser.parse_eml_file(str(test_eml))
-        self.assertGreaterEqual(len(result['emails']), 3)
-
-        # Nettoyage
-        test_eml.unlink()
+        # L'email phishing_001 a un <a href="http://192.168.1.100/...">
+        ip_urls = [u for u in result['urls'] if '192.168.1.100' in u]
+        self.assertGreater(len(ip_urls), 0,
+                           "BeautifulSoup devrait extraire l'URL avec IP")
 
 
 if __name__ == '__main__':

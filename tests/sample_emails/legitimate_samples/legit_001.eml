@@ -1,20 +1,22 @@
-From: john.doe@company.com
-To: jane.smith@company.com
-Subject: Meeting tomorrow at 2pm
-Date: Mon, 10 Feb 2026 09:15:00 +0000
+From: alice.dupont@oteria.fr
+To: team@oteria.fr
+Subject: Reunion projet Python - Mardi 14h
+Date: Mon, 10 Feb 2026 08:30:00 +0100
+MIME-Version: 1.0
 Content-Type: text/plain; charset="utf-8"
-Authentication-Results: mx.company.com; spf=pass smtp.mailfrom=company.com; dkim=pass
+Authentication-Results: mx.oteria.fr; spf=pass smtp.mailfrom=oteria.fr; dkim=pass
 
-Hi Jane,
+Bonjour a tous,
 
-Just a reminder that we have a team meeting scheduled for tomorrow at 2pm in Conference Room B.
+Je vous rappelle notre reunion de projet mardi a 14h en salle B203.
 
-The agenda includes:
-- Project status update
-- Q1 planning
-- Open discussion
+Ordre du jour :
+- Point d'avancement sur le module de parsing
+- Integration des regles de detection
+- Planning pour les tests
 
-Let me know if you have any topics to add.
+Merci de preparer un bref resume de votre avancement.
 
-Best,
-John
+Cordialement,
+Alice Dupont
+alice.dupont@oteria.fr

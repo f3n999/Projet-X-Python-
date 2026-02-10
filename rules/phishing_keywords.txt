@@ -1,30 +1,121 @@
-verify
-confirm
+# ============================================
+# PHISHING KEYWORDS - Mots-cles suspects
+# ============================================
+# Un mot-cle par ligne. Les commentaires (#) sont ignores.
+# Source : OWASP, CERT-FR, SANS, experience terrain
+#
+# Ces mots-cles seuls ne sont PAS une preuve de phishing.
+# C'est leur COMBINAISON qui est suspecte.
+# ============================================
+
+# --- Urgence et pression ---
 urgent
+immediately
+asap
 action required
-click here
-update payment
+act now
+limited time
+expire
+expiration
+last warning
+final notice
+dernier avis
+dernier rappel
+suspension
 suspended
 locked
-compromised
-reset password
-confirm identity
-verify account
+disabled
+restricted
+unauthorized
+
+# --- Demandes d'action ---
+click here
+click below
+click immediately
+verify your account
+verify your identity
+confirm your identity
+confirm your account
+update your information
+update payment
+update your details
+validate your account
+reactivate
+
+# --- Mots-cles financiers ---
+banking
+bank account
+wire transfer
+credit card
+debit card
+refund
+payment failed
+invoice attached
+outstanding payment
+transaction
+billing
+
+# --- Appats (lures) ---
+prize
+winner
+congratulations
+lottery
+reward
+gift card
+free
+bonus
+promotion
+exclusive offer
+
+# --- Faux contexte d'autorite ---
 dear customer
 dear client
-prize
-claim
-limited time
-act now
-banking
+dear user
+dear member
+dear valued
+dear account holder
+security team
+support team
+help desk
+it department
+
+# --- Demandes de credentials ---
+reset password
+confirm password
+verify password
+enter your password
+login credentials
+username and password
+sign in
+log in
+mot de passe
+identifiants
+
+# --- Marques souvent usurpees ---
 paypal
 amazon
 apple
 microsoft
 google
-invoice
-security alert
+netflix
+facebook
+instagram
+linkedin
+whatsapp
+dhl
+fedex
+ups
+chronopost
+la poste
+
+# --- Menaces implicites ---
+compromised
+hacked
+breach
+unauthorized access
+suspicious activity
 unusual activity
-unauthorized
-immediately
-account verification
+security alert
+fraud
+illegal
+violation
