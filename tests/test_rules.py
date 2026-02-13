@@ -1,6 +1,6 @@
 """
 Tests pour le module detection_rules.py
-Lance avec : python -m pytest tests/ -v
+Lancer avec : python -m pytest tests/ -v
 """
 
 import unittest
@@ -105,7 +105,7 @@ class TestDetectionRules(unittest.TestCase):
         results = self.detector.analyze(email)
         self.assertTrue(results['SPF_FAIL']['triggered'])
 
-    # ---- Regle 10 : Suspicious HTML (avec BS4) ----
+    # ---- Regle 10 : Suspicious HTML ----
     def test_suspicious_html_script(self):
         html = '<html><body><script>alert("xss")</script></body></html>'
         email = make_email(body_html=html)
@@ -149,7 +149,7 @@ class TestDetectionRules(unittest.TestCase):
         results = self.detector.analyze(email)
         self.assertTrue(results['ENCODING_OBFUSCATION']['triggered'])
 
-    # ---- Clean email : rien ne se declenche ----
+    # ---- Email propre : rien ne se declenche ----
     def test_clean_email(self):
         email = make_email(
             subject='Reunion mardi',
@@ -161,9 +161,14 @@ class TestDetectionRules(unittest.TestCase):
         )
         results = self.detector.analyze(email)
 
-        triggered = [name for name, r in results.items() if r['triggered']]
+        # Compter les regles declenchees
+        triggered = []
+        for name in results:
+            if results[name]['triggered']:
+                triggered.append(name)
+
         self.assertEqual(len(triggered), 0,
-                         f"Regles declenchees sur un email propre : {triggered}")
+                         "Regles declenchees sur un email propre : " + str(triggered))
 
 
 if __name__ == '__main__':

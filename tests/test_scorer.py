@@ -1,6 +1,6 @@
 """
 Tests pour le module risk_scorer.py
-Lance avec : python -m pytest tests/ -v
+Lancer avec : python -m pytest tests/ -v
 """
 
 import unittest
@@ -46,13 +46,13 @@ class TestRiskScorer(unittest.TestCase):
 
     def test_risk_levels(self):
         """Verifie chaque seuil de risque."""
-        self.assertEqual(self.scorer._get_risk_level(0), 'SAFE')
-        self.assertEqual(self.scorer._get_risk_level(19), 'SAFE')
-        self.assertEqual(self.scorer._get_risk_level(20), 'LOW')
-        self.assertEqual(self.scorer._get_risk_level(40), 'MEDIUM')
-        self.assertEqual(self.scorer._get_risk_level(60), 'HIGH')
-        self.assertEqual(self.scorer._get_risk_level(80), 'CRITICAL')
-        self.assertEqual(self.scorer._get_risk_level(100), 'CRITICAL')
+        self.assertEqual(self.scorer.get_risk_level(0), 'SAFE')
+        self.assertEqual(self.scorer.get_risk_level(19), 'SAFE')
+        self.assertEqual(self.scorer.get_risk_level(20), 'LOW')
+        self.assertEqual(self.scorer.get_risk_level(40), 'MEDIUM')
+        self.assertEqual(self.scorer.get_risk_level(60), 'HIGH')
+        self.assertEqual(self.scorer.get_risk_level(80), 'CRITICAL')
+        self.assertEqual(self.scorer.get_risk_level(100), 'CRITICAL')
 
     def test_triggered_rules_in_metadata(self):
         """Verifie que les regles declenchees sont listees dans metadata."""
@@ -60,7 +60,7 @@ class TestRiskScorer(unittest.TestCase):
             'PASSWORD_REQUEST': {'triggered': True, 'reason': 'Detected', 'weight': 10},
             'CLEAN_RULE': {'triggered': False, 'reason': 'OK', 'weight': 5},
         }
-        _, metadata = self.scorer.calculate_score(detection)
+        score, metadata = self.scorer.calculate_score(detection)
         self.assertEqual(metadata['triggered_rules_count'], 1)
         self.assertEqual(metadata['total_rules'], 2)
         self.assertEqual(metadata['triggered_rules'][0]['name'], 'PASSWORD_REQUEST')
