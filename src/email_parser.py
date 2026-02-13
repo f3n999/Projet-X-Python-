@@ -1,247 +1,150 @@
 """
 EMAIL PARSER - Extraction des donnees d'un email
-Mission : Transformer un fichier .eml brut en dictionnaire Python exploitable
+On lit un fichier .eml et on extrait : headers, corps, URLs, emails, IPs, pieces jointes
 
-Librairies utilisees :
-    - email (stdlib)  : lecture du format .eml (RFC 2822)
-    - re (stdlib)     : expressions regulieres pour extraire URLs, IPs, emails
-    - hashlib (stdlib): calcul de hash MD5/SHA256 des pieces jointes
-    - bs4 (externe)   : BeautifulSoup pour extraire proprement les liens du HTML
-    - email.header    : decodage des en-tetes encodes RFC 2047
+Librairies :
+    - email (stdlib)  : lire les fichiers .eml
+    - re (stdlib)     : expressions regulieres (chercher des patterns dans du texte)
+    - hashlib (stdlib): calculer des hash de fichiers
+    - bs4 (externe)   : BeautifulSoup pour lire le HTML proprement
 """
 
 import email
-import email.policy
 import re
 import hashlib
 from pathlib import Path
-from typing import Dict, List
-from email.header import decode_header
-
 from bs4 import BeautifulSoup
 
 
-# ============================================================================
-# CONSTANTES
-# ============================================================================
+# Regex = expressions regulieres pour trouver des patterns dans du texte
+# re.compile() prepare le pattern une seule fois (plus rapide)
 
-# En-tetes que l'on veut recuperer dans l'email
-HEADERS_OF_INTEREST = [
-    'From', 'To', 'Cc', 'Bcc', 'Subject', 'Date',
-    'Return-Path', 'Reply-To', 'Received',
-    'Authentication-Results', 'DKIM-Signature', 'SPF'
-]
+# Pattern pour trouver des adresses email : quelquechose@domaine.ext
+EMAIL_REGEX = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
 
-# Extensions de fichiers considerees comme dangereuses
-# Source : OWASP + CERT-FR
+# Pattern pour trouver des URLs : http://... ou https://...
+URL_REGEX = re.compile(r'https?://[^\s\)>\]<"\']+')
+
+# Pattern pour trouver des adresses IP : 4 nombres separes par des points
+IP_REGEX = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+
+# Extensions de fichiers dangereuses
 DANGEROUS_EXTENSIONS = [
-    '.exe', '.bat', '.scr', '.vbs', '.js', '.cmd', '.com', '.pif',
-    '.msi', '.jar', '.app', '.deb', '.rpm', '.dmg', '.pkg',
-    '.ps1', '.wsf', '.hta', '.cpl'
+    '.exe', '.bat', '.scr', '.vbs', '.js', '.cmd',
+    '.msi', '.ps1', '.wsf', '.hta'
 ]
 
-# ---- Regex patterns ----
-# On compile les regex une seule fois (performance)
-# Tester sur https://regex101.com pour comprendre chaque pattern
-
-# Adresse email : partie_locale @ domaine . extension
-# Ex: user.name+tag@example.co.uk
-EMAIL_REGEX = re.compile(
-    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-)
-
-# URL commencant par http:// ou https:// ou www.
-# On capture tout jusqu'a un espace ou caractere de fermeture
-URL_REGEX = re.compile(
-    r'https?://[^\s\)>\]<"\']+|www\.[^\s\)>\]<"\']+\.[a-z]+'
-)
-
-# Adresse IPv4 : 4 groupes de 1-3 chiffres separes par des points
-# Ex: 192.168.1.1
-IP_REGEX = re.compile(
-    r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-)
-
-
-# ============================================================================
-# CLASSE PRINCIPALE
-# ============================================================================
 
 class EmailParser:
     """
-    Parse les fichiers .eml et extrait les donnees critiques.
+    Parse un fichier .eml et extrait toutes les donnees utiles.
 
     Utilisation :
         parser = EmailParser()
         resultat = parser.parse_eml_file('email.eml')
     """
 
-    def __init__(self):
-        self.headers_of_interest = HEADERS_OF_INTEREST
-
-    # ========================================================================
-    # POINT D'ENTREE PRINCIPAL
-    # ========================================================================
-
-    def parse_eml_file(self, file_path: str) -> Dict:
+    def parse_eml_file(self, file_path):
         """
-        Parse un fichier .eml et retourne un dictionnaire structure.
+        Lit un fichier .eml et retourne un dictionnaire avec toutes les infos.
 
-        Args:
-            file_path: chemin vers le fichier .eml
-
-        Returns:
-            Dict contenant : headers, body, urls, emails, ips,
-                             attachments, authentication
+        Retourne un dict avec les cles :
+            headers, body, urls, emails, ips, attachments, authentication
         """
         # Verifier que le fichier existe
         path = Path(file_path)
         if not path.exists():
-            return {'error': f'Fichier introuvable : {file_path}'}
+            return {'error': 'Fichier introuvable : ' + file_path}
 
-        # Lire le fichier en mode binaire (rb)
-        # car un .eml peut contenir des pieces jointes binaires
+        # Lire le fichier .eml
         try:
             with open(file_path, 'rb') as f:
-                # policy=email.policy.default retourne un EmailMessage
-                # (au lieu de Message) qui supporte iter_attachments()
-                msg = email.message_from_binary_file(f, policy=email.policy.default)
-        except (OSError, IOError) as e:
-            return {'error': f'Impossible de lire le fichier : {e}'}
+                msg = email.message_from_binary_file(f)
+        except Exception as e:
+            return {'error': 'Impossible de lire le fichier : ' + str(e)}
 
-        # Extraire toutes les donnees et les retourner
-        return {
+        # Extraire toutes les donnees et retourner le resultat
+        resultat = {
             'file_path': file_path,
-            'headers': self._extract_headers(msg),
-            'body': self._extract_body(msg),
-            'urls': self._extract_urls(msg),
-            'emails': self._extract_emails(msg),
-            'ips': self._extract_ips(msg),
-            'attachments': self._extract_attachments(msg),
-            'authentication': self._extract_auth_results(msg)
+            'headers': self.extraire_headers(msg),
+            'body': self.extraire_body(msg),
+            'urls': self.extraire_urls(msg),
+            'emails': self.extraire_emails(msg),
+            'ips': self.extraire_ips(msg),
+            'attachments': self.extraire_attachments(msg),
+            'authentication': self.extraire_auth(msg),
         }
+        return resultat
 
-    # ========================================================================
-    # EXTRACTION DES EN-TETES
-    # ========================================================================
-
-    def _extract_headers(self, msg) -> Dict:
-        """
-        Extrait les en-tetes importants de l'email.
-
-        Certains en-tetes sont encodes en RFC 2047 (ex: =?UTF-8?B?...).
-        On les decode automatiquement avec _decode_header_value.
-        """
+    def extraire_headers(self, msg):
+        """Extrait les en-tetes importants de l'email (From, To, Subject...)."""
         headers = {}
+        # Liste des en-tetes qu'on veut recuperer
+        cles = ['From', 'To', 'Subject', 'Date', 'Authentication-Results']
 
-        for key in self.headers_of_interest:
-            # msg.get() retourne la valeur du header ou 'N/A' si absent
-            value = msg.get(key, 'N/A')
-
-            if value and value != 'N/A':
-                headers[key] = self._decode_header_value(value)
+        for cle in cles:
+            # msg[cle] retourne la valeur du header, ou None si absent
+            valeur = msg[cle]
+            if valeur:
+                headers[cle] = str(valeur)
             else:
-                headers[key] = value
+                headers[cle] = 'N/A'
 
         return headers
 
-    @staticmethod
-    def _decode_header_value(header_value: str) -> str:
+    def extraire_body(self, msg):
         """
-        Decode un en-tete encode en RFC 2047.
+        Extrait le corps de l'email (texte brut et HTML).
 
-        Exemple :
-            =?UTF-8?B?VXJnZW50?= -> 'Urgent'
-            =?iso-8859-1?Q?R=E9sum=E9?= -> 'Résumé'
-
-        La fonction decode_header() de Python separe les morceaux,
-        puis on les reassemble en une seule chaine.
-        """
-        try:
-            decoded_parts = decode_header(header_value)
-            result = ''
-
-            for content, encoding in decoded_parts:
-                # Si c'est des bytes, on decode avec l'encoding indique
-                if isinstance(content, bytes):
-                    result += content.decode(encoding or 'utf-8', errors='ignore')
-                else:
-                    result += content
-
-            return result
-        except (ValueError, UnicodeDecodeError):
-            return header_value
-
-    # ========================================================================
-    # EXTRACTION DU CORPS
-    # ========================================================================
-
-    def _extract_body(self, msg) -> Dict:
-        """
-        Extrait le corps de l'email en version texte brut et HTML.
-
-        Un email peut etre :
-        - multipart : plusieurs parties (texte + HTML + pieces jointes)
-        - simple    : une seule partie (texte brut)
-
-        msg.walk() parcourt recursivement toutes les parties.
+        Un email peut etre multipart (plusieurs parties : texte + HTML)
+        ou simple (juste du texte).
         """
         body_text = ''
         body_html = ''
 
+        # Email multipart = plusieurs parties
         if msg.is_multipart():
+            # msg.walk() parcourt toutes les parties de l'email
             for part in msg.walk():
                 content_type = part.get_content_type()
-
                 try:
-                    # get_payload(decode=True) decode le base64/quoted-printable
                     payload = part.get_payload(decode=True)
                     if not payload:
                         continue
-
-                    # Recuperer le charset de la partie (utf-8 par defaut)
-                    charset = part.get_content_charset() or 'utf-8'
-                    decoded = payload.decode(charset, errors='ignore')
+                    # Decoder les bytes en texte
+                    contenu = payload.decode('utf-8', errors='ignore')
 
                     if content_type == 'text/plain':
-                        body_text = decoded
+                        body_text = contenu
                     elif content_type == 'text/html':
-                        body_html = decoded
-
-                except (UnicodeDecodeError, AttributeError, LookupError):
+                        body_html = contenu
+                except Exception:
                     continue
         else:
-            # Email simple (pas multipart)
+            # Email simple = une seule partie
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    charset = msg.get_content_charset() or 'utf-8'
-                    body_text = payload.decode(charset, errors='ignore')
-            except (UnicodeDecodeError, AttributeError, LookupError):
+                    body_text = payload.decode('utf-8', errors='ignore')
+            except Exception:
                 pass
 
         return {
-            'text': body_text[:500],      # Apercu (500 premiers caracteres)
-            'html': body_html[:500],      # Apercu HTML
-            'full_text': body_text,       # Texte complet
-            'full_html': body_html        # HTML complet
+            'text': body_text[:500],       # Apercu (500 premiers caracteres)
+            'html': body_html[:500],
+            'full_text': body_text,        # Texte complet
+            'full_html': body_html,
         }
 
-    # ========================================================================
-    # EXTRACTION DES URLs
-    # ========================================================================
-
-    def _extract_urls(self, msg) -> List[str]:
+    def extraire_urls(self, msg):
         """
-        Extrait tous les URLs du message.
+        Extrait toutes les URLs du message.
 
-        Deux methodes combinees :
-        1. Regex sur le texte brut (attrape les URLs en clair)
-        2. BeautifulSoup sur le HTML (attrape les href des balises <a>)
-
-        On utilise un set() pour eviter les doublons.
+        Deux methodes :
+        1. Regex : cherche les http:// dans le texte
+        2. BeautifulSoup : cherche les <a href="..."> dans le HTML
         """
-        urls = set()
+        urls = []
 
         if msg.is_multipart():
             for part in msg.walk():
@@ -249,241 +152,162 @@ class EmailParser:
                     payload = part.get_payload(decode=True)
                     if not payload:
                         continue
-                    content = payload.decode('utf-8', errors='ignore')
+                    contenu = payload.decode('utf-8', errors='ignore')
                     content_type = part.get_content_type()
 
-                    # Methode 1 : regex sur tout le contenu
-                    urls.update(URL_REGEX.findall(content))
+                    # Methode 1 : regex sur le texte
+                    for url in URL_REGEX.findall(contenu):
+                        if url not in urls:
+                            urls.append(url)
 
-                    # Methode 2 : BeautifulSoup sur le HTML uniquement
+                    # Methode 2 : BeautifulSoup sur le HTML
                     if content_type == 'text/html':
-                        urls.update(self._extract_urls_from_html(content))
+                        soup = BeautifulSoup(contenu, 'html.parser')
+                        for tag in soup.find_all('a'):
+                            href = tag.get('href')
+                            if href and href.startswith('http') and href not in urls:
+                                urls.append(href)
 
-                except (UnicodeDecodeError, AttributeError):
+                except Exception:
                     continue
         else:
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    content = payload.decode('utf-8', errors='ignore')
-                    urls.update(URL_REGEX.findall(content))
-            except (UnicodeDecodeError, AttributeError):
+                    contenu = payload.decode('utf-8', errors='ignore')
+                    for url in URL_REGEX.findall(contenu):
+                        if url not in urls:
+                            urls.append(url)
+            except Exception:
                 pass
 
-        return list(urls)
+        return urls
 
-    @staticmethod
-    def _extract_urls_from_html(html_content: str) -> List[str]:
-        """
-        Utilise BeautifulSoup pour extraire les URLs des balises HTML.
+    def extraire_emails(self, msg):
+        """Extrait toutes les adresses email trouvees dans le message."""
+        emails = []
 
-        Plus fiable que la regex sur du HTML car :
-        - Gere les attributs href, src, action
-        - Ne se trompe pas avec les balises imbriquees
-        - Parse correctement le HTML malformer
+        # Chercher dans les headers
+        for header in ['From', 'To', 'Cc', 'Reply-To']:
+            valeur = msg[header]
+            if valeur:
+                for addr in EMAIL_REGEX.findall(str(valeur)):
+                    if addr not in emails:
+                        emails.append(addr)
 
-        Doc : https://www.crummy.com/software/BeautifulSoup/bs4/doc/
-        """
-        found_urls = []
-
-        # html.parser = parser HTML integre a Python (pas de dependance C)
-        soup = BeautifulSoup(html_content, 'html.parser')
-
-        # Chercher dans les balises <a href="...">, <img src="...">,
-        # <form action="...">, <iframe src="...">
-        for tag in soup.find_all(['a', 'img', 'form', 'iframe', 'script']):
-            # Chaque type de balise a un attribut different pour l'URL
-            url = tag.get('href') or tag.get('src') or tag.get('action')
-            if url and url.startswith(('http://', 'https://', 'www.')):
-                found_urls.append(url)
-
-        return found_urls
-
-    # ========================================================================
-    # EXTRACTION DES ADRESSES EMAIL
-    # ========================================================================
-
-    def _extract_emails(self, msg) -> List[str]:
-        """
-        Extrait toutes les adresses email du message.
-
-        Cherche dans :
-        1. Les en-tetes (From, To, Cc, Bcc, Reply-To)
-        2. Le corps du message (texte + HTML)
-        """
-        emails = set()
-
-        # Dans les en-tetes
-        for header in ['From', 'To', 'Cc', 'Bcc', 'Reply-To']:
-            value = msg.get(header, '')
-            if value:
-                emails.update(EMAIL_REGEX.findall(value))
-
-        # Dans le corps
+        # Chercher dans le corps
         if msg.is_multipart():
             for part in msg.walk():
                 try:
                     payload = part.get_payload(decode=True)
                     if payload:
-                        content = payload.decode('utf-8', errors='ignore')
-                        emails.update(EMAIL_REGEX.findall(content))
-                except (UnicodeDecodeError, AttributeError):
+                        contenu = payload.decode('utf-8', errors='ignore')
+                        for addr in EMAIL_REGEX.findall(contenu):
+                            if addr not in emails:
+                                emails.append(addr)
+                except Exception:
                     continue
         else:
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    content = payload.decode('utf-8', errors='ignore')
-                    emails.update(EMAIL_REGEX.findall(content))
-            except (UnicodeDecodeError, AttributeError):
+                    contenu = payload.decode('utf-8', errors='ignore')
+                    for addr in EMAIL_REGEX.findall(contenu):
+                        if addr not in emails:
+                            emails.append(addr)
+            except Exception:
                 pass
 
-        return list(emails)
+        return emails
 
-    # ========================================================================
-    # EXTRACTION DES ADRESSES IP
-    # ========================================================================
+    def extraire_ips(self, msg):
+        """Extrait les adresses IP depuis les en-tetes Received."""
+        ips = []
 
-    def _extract_ips(self, msg) -> List[str]:
+        # Les headers "Received" contiennent les IPs des serveurs
+        received = msg.get_all('Received', [])
+        for header_value in received:
+            for ip in IP_REGEX.findall(str(header_value)):
+                if ip not in ips:
+                    ips.append(ip)
+
+        return ips
+
+    def extraire_attachments(self, msg):
         """
-        Extrait les adresses IP depuis les en-tetes Received.
-
-        Les en-tetes Received contiennent le chemin que l'email
-        a parcouru : chaque serveur intermediaire ajoute son IP.
-        """
-        ips = set()
-
-        # Parcourir tous les headers "Received"
-        received_headers = msg.get_all('Received', [])
-        for header_value in received_headers:
-            if isinstance(header_value, str):
-                ips.update(IP_REGEX.findall(header_value))
-
-        # Header X-Originating-IP (parfois present)
-        x_orig_ip = msg.get('X-Originating-IP', '')
-        if x_orig_ip:
-            ips.update(IP_REGEX.findall(x_orig_ip))
-
-        return list(ips)
-
-    # ========================================================================
-    # EXTRACTION DES PIECES JOINTES
-    # ========================================================================
-
-    def _extract_attachments(self, msg) -> List[Dict]:
-        """
-        Extrait les pieces jointes avec :
-        - Nom du fichier
-        - Extension
-        - Taille en octets
-        - Hash MD5 et SHA256 (pour identification sur VirusTotal)
-        - Flag is_dangerous si extension a risque
+        Extrait les pieces jointes avec nom, taille et hash.
+        Indique si l'extension est dangereuse.
         """
         attachments = []
 
         if not msg.is_multipart():
             return attachments
 
-        for part in msg.iter_attachments():
+        for part in msg.walk():
+            # get_filename() retourne le nom du fichier joint, ou None
             filename = part.get_filename()
             if not filename:
                 continue
 
             try:
-                # Decoder le nom du fichier (peut etre en RFC 2047)
-                decoded_filename = self._decode_header_value(filename)
                 payload = part.get_payload(decode=True)
-
                 if not payload:
                     continue
 
-                # Calculer les hashes pour identification
-                # MD5  : 128 bits, rapide mais collisions possibles
-                # SHA256 : 256 bits, plus sur, standard en forensic
-                md5_hash = hashlib.md5(payload).hexdigest()
-                sha256_hash = hashlib.sha256(payload).hexdigest()
+                # Calculer les hash du fichier (pour identification)
+                md5 = hashlib.md5(payload).hexdigest()
+                sha256 = hashlib.sha256(payload).hexdigest()
 
                 # Verifier si l'extension est dangereuse
-                ext = Path(decoded_filename).suffix.lower()
-                is_dangerous = ext in DANGEROUS_EXTENSIONS
+                extension = Path(filename).suffix.lower()
+                est_dangereux = extension in DANGEROUS_EXTENSIONS
 
-                attachments.append({
-                    'filename': decoded_filename,
-                    'extension': ext,
-                    'size': len(payload),
-                    'md5': md5_hash,
-                    'sha256': sha256_hash,
-                    'is_dangerous': is_dangerous
-                })
-
-            except (ValueError, AttributeError, OSError):
                 attachments.append({
                     'filename': filename,
-                    'error': 'Echec du traitement de la piece jointe'
+                    'extension': extension,
+                    'size': len(payload),
+                    'md5': md5,
+                    'sha256': sha256,
+                    'is_dangerous': est_dangereux,
                 })
+            except Exception:
+                continue
 
         return attachments
 
-    # ========================================================================
-    # EXTRACTION DES RESULTATS D'AUTHENTIFICATION
-    # ========================================================================
-
-    def _extract_auth_results(self, msg) -> Dict:
+    def extraire_auth(self, msg):
         """
         Extrait le header Authentication-Results.
-
-        Ce header contient les resultats de verification :
-        - SPF  : le serveur d'envoi est-il autorise par le domaine ?
-        - DKIM : la signature numerique est-elle valide ?
-        - DMARC: les politiques de domaine sont-elles respectees ?
-
-        Si ce header est absent, c'est un signal d'alerte.
+        Ce header dit si l'email a ete verifie (SPF, DKIM).
         """
-        auth_results = msg.get('Authentication-Results', 'N/A')
+        auth = msg['Authentication-Results']
+        if auth:
+            return {'raw': str(auth), 'has_auth': True}
+        else:
+            return {'raw': 'N/A', 'has_auth': False}
 
-        return {
-            'raw': auth_results,
-            'has_auth': auth_results != 'N/A'
-        }
 
-
-# ============================================================================
-# MODE INTERACTIF (test rapide en standalone)
-# ============================================================================
-
+# Mode standalone : on peut tester le parser tout seul
 if __name__ == '__main__':
     import sys
     import json
 
     parser = EmailParser()
 
-    # Argument en ligne de commande ou saisie interactive
     if len(sys.argv) > 1:
-        file_path = sys.argv[1]
+        chemin = sys.argv[1]
     else:
-        file_path = input("Chemin du fichier .eml : ").strip()
+        chemin = input("Chemin du fichier .eml : ").strip()
 
-    if not file_path:
-        print("Aucun fichier specifie")
-        sys.exit(1)
+    resultat = parser.parse_eml_file(chemin)
 
-    print(f"\nAnalyse de {file_path}...")
-    result = parser.parse_eml_file(file_path)
-
-    if 'error' in result:
-        print(f"Erreur : {result['error']}")
-        sys.exit(1)
-
-    print(f"Headers : {len(result['headers'])}")
-    print(f"URLs    : {len(result['urls'])}")
-    print(f"Emails  : {len(result['emails'])}")
-    print(f"IPs     : {len(result['ips'])}")
-    print(f"Pièces jointes : {len(result['attachments'])}")
-
-    # Sauvegarde optionnelle
-    save = input("\nSauvegarder en JSON ? (o/n) : ").lower().strip()
-    if save == 'o':
-        output_file = f"{Path(file_path).stem}_parsed.json"
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, default=str)
-        print(f"Sauvegarde : {output_file}")
+    if 'error' in resultat:
+        print("Erreur :", resultat['error'])
+    else:
+        print("Headers :", len(resultat['headers']))
+        print("URLs    :", len(resultat['urls']))
+        print("Emails  :", len(resultat['emails']))
+        print("IPs     :", len(resultat['ips']))
+        print("Pieces jointes :", len(resultat['attachments']))
+        print()
+        print(json.dumps(resultat, indent=2, default=str))
